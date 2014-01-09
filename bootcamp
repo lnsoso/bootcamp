@@ -1,0 +1,75 @@
+#!/bin/sh
+
+[ -e "${HOME}/.bootcamprc" ] && source "${HOME}/.bootcamprc"
+if [ "${BOOTCAMP}" == '' ]; then
+	BOOTCAMP="BOOTCAMP"
+fi
+if [ "${VMDIR}" == '' ]; then
+	VMDIR="${HOME}/VirtualBox VMs"
+fi
+if ! [ -e "${HOME}/.bootcamprc" ]; then
+	echo BOOTCAMP=\"${BOOTCAMP}\" > "${HOME}/.bootcamprc"
+	echo VMDIR=\"${VMDIR}\" >> "${HOME}/.bootcamprc"
+fi
+
+if ! [ -d "${VMDIR}" ]; then
+	printf "\e[31mCan't find virtual box directory: ${VMDIR}\e[0m\n"
+	exit -1
+fi
+
+DISK=$(diskutil list | grep ${BOOTCAMP} | sed 's/.*disk/\/dev\/disk/')
+if [ "${DISK}" == '' ]; then
+	printf "\e[31mCan't find bootcamp partition with name(${BOOTCAMP})\e[0m\n"
+	exit -1
+fi
+
+PART=${DISK##*s}
+RAWDISK=${DISK%s?}
+NAME=$(echo "${BOOTCAMP}" | tr '[:upper:]' '[:lower:]')
+VMDIR="${VMDIR}/bootcamp"
+VMDK="${VMDIR}/${NAME}.vmdk"
+
+function umount {
+	sudo chmod 777 ${DISK}
+	diskutil umount ${DISK}
+}
+
+function mount {
+	diskutil mount ${DISK}
+}
+
+function mkvmdk {
+	[ -d "${VMDIR}" ] || mkdir -p "${VMDIR}"
+	sudo VBoxManage internalcommands createrawvmdk -rawdisk "${RAWDISK}" -filename "${VMDIR}/${NAME}.vmdk" -partitions "${PART}"
+	sudo chown "${USER}" "${VMDIR}/${NAME}.vmdk"
+	sudo chown "${USER}" "${VMDIR}/${NAME}-pt.vmdk"
+}
+
+function mkvm {
+	VBoxManage createvm --name "${NAME}" --ostype "Windows7_64" --register
+	VBoxManage storagectl "${NAME}" --name "IDE Controller" --add ide
+	VBoxManage storagectl "${NAME}" --name "SATA Controller" --add sata --controller IntelAHCI
+	VBoxManage storageattach "${NAME}" --storagectl "SATA Controller" --port 0 --device 0 --type hdd --medium "${VMDK}"
+	VBoxManage modifyvm "${NAME}" --ioapic on
+	VBoxManage modifyvm "${NAME}" --boot1 dvd --boot2 disk --boot3 none --boot4 none
+	VBoxManage modifyvm "${NAME}" --memory 1024 --vram 128
+}
+
+if [ "$1" == "mount" ]; then
+	mount
+	exit 0
+fi
+
+echo Maybe need password to sudo...
+umount
+[ -e "${VMDIR}/${NAME}.vmdk" ] || mkvmdk
+if ! [ -e "${VMDIR}/${NAME}.vmdk" ]; then
+	printf "\e[31mCan't create vmdk from ${DISK}\e[0m\n"
+	exit -1
+fi
+[ -e "${VMDIR}/${NAME}.vbox" ] || mkvm
+if ! [ -e "${VMDIR}/${NAME}.vbox" ]; then
+	printf "\e[31mCan't create vm for ${NAME}\e[0m\n"
+	exit -1
+fi
+VBoxManage startvm "${NAME}"
