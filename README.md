@@ -5,7 +5,7 @@ Usage
 =====
 
 - Install Virtual Box First,
-- Create a configure file:
+- Create a configure file at `~/.bootcamprc`:
 
 ```
 BOOTCAMP="BOOTCAMP"                     # Your Bootcamp partition's label
